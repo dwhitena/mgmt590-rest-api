@@ -1,3 +1,5 @@
+import os
+
 from transformers.pipelines import pipeline
 from flask import Flask
 from flask import request
@@ -45,4 +47,4 @@ def answer():
 if __name__ == '__main__':
 
     # Run our Flask app and start listening for requests!
-    app.run(host='0.0.0.0', port=8000, threaded=True)
+    app.run(host='0.0.0.0', port=os.getenv('PORT'), threaded=True)
