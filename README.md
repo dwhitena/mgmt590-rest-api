@@ -58,7 +58,7 @@ Expected Response Format:
 ]
 ```
 
-###Add a Model
+### Add a Model
 
 This route allows a user to add a new model into the server and make it available for inference.
 
