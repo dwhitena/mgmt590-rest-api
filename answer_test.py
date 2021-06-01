@@ -9,5 +9,5 @@ def client():
         yield client
 
 def test_health(client):
-    r = client.get("/blah")
+    r = client.get("/")
     assert 200 == r.status_code
