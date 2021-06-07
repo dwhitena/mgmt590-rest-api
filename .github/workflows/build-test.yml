@@ -1,7 +1,7 @@
 on:
   push:
     branches:
-      - master
+      - testing-ref
 
 name: Build and Deploy a Container
 env:
@@ -26,22 +26,11 @@ jobs:
     - name: Authorize Docker push
       run: gcloud auth configure-docker
 
-    - name: Build and Push Container
+    - name: Build Container
       run: |-
         docker build -t gcr.io/${{ env.PROJECT_ID }}/${{ env.SERVICE }}:${{  github.sha }} .
-        docker push gcr.io/${{ env.PROJECT_ID }}/${{ env.SERVICE }}:${{  github.sha }}
-        
+
     - name: Test Container
       run: |-
         docker run -w /app gcr.io/${{ env.PROJECT_ID }}/${{ env.SERVICE }}:${{  github.sha }} pytest -v
-
-    - name: Deploy to Cloud Run
-      id: deploy
-      uses: google-github-actions/deploy-cloudrun@v0.4.0
-      with:
-        service: ${{ env.SERVICE }}
-        image: gcr.io/${{ env.PROJECT_ID }}/${{ env.SERVICE }}:${{  github.sha }}
-        region: ${{ env.REGION }}
-
-    - name: Show Output
-      run: echo ${{ steps.deploy.outputs.url }}
+ 
