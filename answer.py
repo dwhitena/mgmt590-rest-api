@@ -1,33 +1,68 @@
 import os
 import time
-import sqlite3
 
 from transformers.pipelines import pipeline
 from flask import Flask
 from flask import request, jsonify
+import psycopg2
 
-#---------------------#
-#  Create Flask App   #
-#---------------------#
+# Process SSL certificates
+if not os.path.exists('.ssl'):
+    os.makedirs('.ssl')
+
+filecontents = os.environ.get('PG_SSLROOTCERT')
+with open('.ssl/server-ca.pem', 'w') as f:
+    f.write(filecontents)
+
+filecontents = os.environ.get('PG_SSLCERT').replace("@", "=")
+with open('.ssl/client-cert.pem', 'w') as f:
+    f.write(filecontents)
+
+filecontents = os.environ.get('PG_SSLKEY').replace("@", "=")
+with open('.ssl/client-key.pem', 'w') as f:
+    f.write(filecontents)
+
+os.chmod(".ssl/server-ca.pem", 0o600)
+os.chmod(".ssl/client-cert.pem", 0o600)
+os.chmod(".ssl/client-key.pem", 0o600)
+
+# Format DB connection information
+sslmode = "sslmode=verify-ca"
+sslrootcert = "sslrootcert=.ssl/server-ca.pem"
+sslcert = "sslcert=.ssl/client-cert.pem"
+sslkey = "sslkey=.ssl/client-key.pem"
+hostaddr = "hostaddr={}".format(os.environ.get('PG_HOST'))
+user = "user=postgres"
+password = "password={}".format(os.environ.get('PG_PASSWORD'))
+dbname = "dbname=mgmt590"
+
+# Construct database connect string
+db_connect_string = " ".join([
+      sslmode,
+      sslrootcert,
+      sslcert,
+      sslkey,
+      hostaddr,
+      user,
+      password,
+      dbname
+    ])
+
+# Connect to your postgres DB
+con = psycopg2.connect(db_connect_string)
 
 # Create a variable that will hold our models in memory
 models = {}
 
-# The database file
-db = 'answers.db'
 
+#-----------------#
+#   FLASK APP     #
+#-----------------#
 
-
-def create_app():
+def create_app(models, con):
 
     # Create my flask app
     app = Flask(__name__)
-
-    # Create a variable that will hold our models in memory
-    #models = {}
-
-    # The database file
-    #db = 'answers.db'
 
     #--------------#
     #    ROUTES    #
@@ -58,11 +93,10 @@ def create_app():
 
         # Answer the question
         answer, model_name = answer_question(request.args.get('model'), 
-                data['question'], data['context'])
+                data['question'], data['context'], models)
         timestamp = int(time.time())
 
         # Insert our answer in the database
-        con = sqlite3.connect(db)
         cur = con.cursor()
         sql = "INSERT INTO answers VALUES ('{question}','{context}','{model}','{answer}',{timestamp})"
         cur.execute(sql.format(
@@ -72,7 +106,6 @@ def create_app():
             answer=answer, 
             timestamp=str(timestamp)))
         con.commit()
-        con.close()
 
         # Create the response body.
         out = {
@@ -104,10 +137,10 @@ def create_app():
             sql_rev = sql.format(start=request.args.get('start'), end=request.args.get('end'))
 
         # Query the database
-        con = sqlite3.connect(db)
         cur = con.cursor()
+        cur.execute(sql_rev)
         out = []
-        for row in cur.execute(sql_rev):
+        for row in cur.fetchall():
             out.append({
                 "question": row[0],
                 "context": row[1],
@@ -115,7 +148,6 @@ def create_app():
                 "model": row[3],
                 "timestamp": row[4]
             })
-        con.close()
 
         return jsonify(out)
 
@@ -144,7 +176,7 @@ def create_app():
         data = request.json
         
         # Load the provided model
-        if not validate_model(data['name']):
+        if not validate_model(data['name'], models):
             models_rev = []
             for m in models['models']:
                 models_rev.append(m)
@@ -202,12 +234,13 @@ def create_app():
 
     return app
 
+
 #--------------#
 #  FUNCTIONS   #
 #--------------#
 
 # Validate that a model is available
-def validate_model(model_name):
+def validate_model(model_name, models):
     
     # Get the loaded models
     model_names = []
@@ -218,7 +251,7 @@ def validate_model(model_name):
 
 
 # Answer a question with a given model name
-def answer_question(model_name, question, context):
+def answer_question(model_name, question, context, models):
     
     # Get the right model pipeline
     if model_name == None:
@@ -240,9 +273,6 @@ def answer_question(model_name, question, context):
 # Run main by default if running "python answer.py"
 if __name__ == '__main__':
 
-    # Create our Flask App
-    app = create_app()
-
     # Initialize our default model.
     models = { 
         "default": "distilled-bert",
@@ -259,12 +289,12 @@ if __name__ == '__main__':
     }
 
     # Database setup
-    con = sqlite3.connect(db)
     cur = con.cursor()
-    cur.execute('''CREATE TABLE answers
-               (question text, context text, model text, answer text, timestamp int)''')
-    con.commit()
-    con.close()
+    cur.execute("""CREATE TABLE IF NOT EXISTS answers 
+        (question text, context text, model text, answer text, timestamp int)""")
+
+    # Create our Flask App
+    app = create_app(models, con)
 
     # Run our Flask app and start listening for requests!
     app.run(host='0.0.0.0', port=int(os.environ.get("PORT", 8080)), threaded=True)
