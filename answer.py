@@ -1,6 +1,7 @@
 import os
 import time
 
+from werkzeug.utils import secure_filename
 from transformers.pipelines import pipeline
 from flask import Flask
 from flask import request, jsonify
@@ -9,6 +10,12 @@ import psycopg2
 # Process SSL certificates
 if not os.path.exists('.ssl'):
     os.makedirs('.ssl')
+
+filecontents = os.environ.get('GCS_CREDS')
+decoded_creds = base64.b64decode(filecontents)
+with open('/app/creds.json', 'w') as f:
+    f.write(decoded_creds)
+os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = '/app/creds.json'
 
 filecontents = os.environ.get('PG_SSLROOTCERT')
 with open('.ssl/server-ca.pem', 'w') as f:
@@ -75,6 +82,11 @@ def create_app(models, con):
     def hello_world():
         return "<p>The question answering API is healthy!</p>"
 
+    @app.route('/upload', methods = ['POST'])
+    def upload_file():
+      f = request.files['file']
+      f.save(os.path.join)('/tmp', secure_filename(f.filename)))
+      return jsonify({"upload_status": 'file uploaded successfully'})
 
     # Define a handler for the /answer path, which
     # processes a JSON payload with a question and
